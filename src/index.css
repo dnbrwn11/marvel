@@ -1,0 +1,77 @@
+@import "tailwindcss";
+
+/* ─── GAP Partners brand theme (LIGHT MODE) ─────────────────────────────────
+   Design tokens are mirrored in src/brand/tokens.ts (the single source of
+   truth for JS). These @theme entries expose the same palette as Tailwind
+   utilities (bg-teal, text-ink, border-card, etc.). */
+@theme {
+  --color-surface: #FFFFFF;
+  --color-panel: #F6F7F8;
+  --color-card: #E3E5E8;
+
+  --color-chrome: #111214;
+  --color-chrome-muted: #9A9DA2;
+
+  --color-ink: #1A1C1F;
+  --color-muted: #6B6E73;
+
+  --color-teal: #00B0A8;
+  --color-magenta: #EC008C;
+  --color-orange: #F5821F;
+  --color-coral: #F86464;
+  --color-purple: #9643FC;
+
+  --font-sans: "Inter", "Barlow", system-ui, sans-serif;
+  --font-display: "Barlow", "Inter", system-ui, sans-serif;
+}
+
+:root {
+  color-scheme: light;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  min-height: 100vh;
+  width: 100%;
+}
+
+body {
+  background: var(--color-panel);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Staggered fade/slide-in for breakdown rows (entrance only — runs once when the
+   row mounts, not on value updates). Delay is set inline per row index. */
+@keyframes rowIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.row-in {
+  animation: rowIn 300ms ease-out both;
+}
+
+/* The GAP signature: teal → magenta → orange, equal thirds. */
+.gap-tricolor {
+  height: 4px;
+  width: 100%;
+  background: linear-gradient(
+    to right,
+    var(--color-teal) 0%,
+    var(--color-teal) 33.33%,
+    var(--color-magenta) 33.33%,
+    var(--color-magenta) 66.66%,
+    var(--color-orange) 66.66%,
+    var(--color-orange) 100%
+  );
+}
