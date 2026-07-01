@@ -51,9 +51,8 @@ export const DEFAULT_INPUTS: Inputs = {
   premiumPct: 12,              // % of GSF that is premium/club space
   leedTier: "silver",          // sustainability certification target
   scoreboardTier: "premium",   // center-hung scoreboard tier
-  // GAP submitted a firm GMP for the 2028–2030 window, so escalation-to-midpoint
-  // is already embedded in the Cost of Work — base-case escalation is 0.
-  escalationPct: 0,
+  constructionStartMonth: 2028 * 12 + 1, // Feb 2028 (per RFP), months since year 0
+  annualEscalationRate: 4,     // %/yr; compounds from today to construction midpoint
   // GAP's ACTUAL submitted fee structure (real, not placeholders):
   gcGrPct: 8.23,             // GAP submitted $72,332,434 GC lump (= 8.23% of Cost of Work)
   feePct: 3.25,              // Contractor's Fee
@@ -68,6 +67,31 @@ export const COST_BASIS_NOTE =
   "Basis: GAP Cost of Work / GMP construction cost (ties to submitted GC and fee). " +
   "Excludes owner soft costs, FF&E, design fees, land, and financing. " +
   "Public ~$1.3B figure includes owner costs outside CM scope.";
+
+// ── SCHEDULE / ESCALATION DATE HELPERS ───────────────────────────────────────
+// Dates are integer "months since year 0" = year*12 + monthIndex (0=Jan).
+export const CONSTRUCTION_MONTHS = 30;         // start → substantial completion
+export const CURRENT_DATE_MONTHS = 2026 * 12 + 6; // ≈ mid-2026 (escalation basis "today")
+export const SEASON_TARGET_MONTH = 2030 * 12 + 7; // Aug 2030 = 2030-31 NBA season target
+
+const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+export function monthLabel(m: number): string {
+  const y = Math.floor(m / 12);
+  const mo = ((m % 12) + 12) % 12;
+  return `${MONTH_NAMES[mo]} ${y}`;
+}
+export function shortMonthLabel(m: number): string {
+  const y = Math.floor(m / 12);
+  const mo = ((m % 12) + 12) % 12;
+  return `${MONTH_NAMES[mo]} '${String(y).slice(2)}`;
+}
+
+// Substantial completion (start + 30 months) and whether it meets the 2030-31
+// NBA season target (≤ Aug 2030). Pure function of the start date.
+export function scheduleOutcome(startMonth: number) {
+  const scMonth = startMonth + CONSTRUCTION_MONTHS;
+  return { scMonth, scLabel: monthLabel(scMonth), meets: scMonth <= SEASON_TARGET_MONTH };
+}
 
 // ── 2. RATES  (calibrated to GAP's submitted Cost of Work) ────────────────────
 // Recalibrated from the original planning placeholders: every driver scaled by
@@ -416,7 +440,12 @@ export function computeModel(input: Inputs, rates: Rates = RATES): ModelResult {
   add("bond", `P&P bond (${i.bondPct}%)`, MARKUPS, bond, "% of contract value");
 
   const constructionCostToday = afterPrecon + bond;
-  const escalation = constructionCostToday * (i.escalationPct / 100);
+  // Date-driven escalation: compound the annual rate from "today" to the
+  // construction midpoint. A later start compounds longer → higher escalation.
+  const midpointMonths = i.constructionStartMonth + CONSTRUCTION_MONTHS / 2;
+  const yearsToMidpoint = Math.max(0, (midpointMonths - CURRENT_DATE_MONTHS) / 12);
+  const escFactor = Math.pow(1 + i.annualEscalationRate / 100, yearsToMidpoint);
+  const escalation = constructionCostToday * (escFactor - 1);
   const constructionCostEscalated = constructionCostToday + escalation;
 
   return {

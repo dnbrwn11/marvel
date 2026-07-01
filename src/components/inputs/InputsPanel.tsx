@@ -7,6 +7,7 @@
 
 import type { ReactNode } from "react";
 import { useArena } from "../../state/ArenaModelContext";
+import { monthLabel, scheduleOutcome } from "../../model/arenaCostModel";
 import { Slider } from "./controls/Slider";
 import { SegmentedToggle } from "./controls/SegmentedToggle";
 import { Switch } from "./controls/Switch";
@@ -145,15 +146,25 @@ export function InputsPanel() {
         {/* Cost Assumptions */}
         <Section title="Cost Assumptions">
           <Slider
-            label="Escalation to midpoint"
-            value={inputs.escalationPct}
-            min={0}
-            max={30}
-            step={0.5}
-            unit="%"
-            format={(v) => v.toFixed(1)}
-            onChange={(v) => setInput("escalationPct", v)}
+            label="Construction start"
+            value={inputs.constructionStartMonth}
+            min={2027 * 12}
+            max={2031 * 12}
+            step={1}
+            format={(v) => monthLabel(v)}
+            onChange={(v) => setInput("constructionStartMonth", v)}
           />
+          <Slider
+            label="Annual escalation rate"
+            value={inputs.annualEscalationRate}
+            min={0}
+            max={8}
+            step={0.25}
+            unit="%/yr"
+            format={(v) => v.toFixed(2)}
+            onChange={(v) => setInput("annualEscalationRate", v)}
+          />
+          <ScheduleOutcome startMonth={inputs.constructionStartMonth} />
           <SegmentedToggle
             label="LEED / sustainability tier"
             value={inputs.leedTier}
@@ -183,5 +194,24 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
       </h2>
       <div className="space-y-5">{children}</div>
     </section>
+  );
+}
+
+// Schedule-outcome readout: substantial completion date + NBA-season status flag.
+function ScheduleOutcome({ startMonth }: { startMonth: number }) {
+  const o = scheduleOutcome(startMonth);
+  return (
+    <div
+      className={[
+        "rounded-lg border px-3 py-2 text-xs font-medium leading-snug",
+        o.meets
+          ? "border-teal/30 bg-teal/10 text-teal"
+          : "border-orange/40 bg-orange/10 text-orange",
+      ].join(" ")}
+    >
+      {o.meets
+        ? `✓ Substantial completion ${o.scLabel} — meets 2030-31 NBA season target`
+        : `⚠ Completes ${o.scLabel} — misses 2030-31 season`}
+    </div>
   );
 }

@@ -9,6 +9,7 @@ import { Tricolor } from "../shared/Tricolor";
 import { useCountUp } from "../shared/useCountUp";
 import { formatUSD, formatUSDCompact } from "../shared/currency";
 import { colors } from "../../brand/tokens";
+import { monthLabel, scheduleOutcome } from "../../model/arenaCostModel";
 import { StackedCostBar } from "../summary/StackedCostBar";
 
 export function CostCommandBar() {
@@ -34,8 +35,10 @@ export function CostCommandBar() {
             {formatUSD(hero)}
           </div>
           <div className="mt-0.5 text-xs text-muted">
-            includes {escPct.toFixed(1)}% escalation · {formatUSD(model.escalation)}
+            start {monthLabel(inputs.constructionStartMonth)} · {escPct.toFixed(1)}%
+            escalation ({formatUSD(model.escalation)})
           </div>
+          <SeasonFlag startMonth={inputs.constructionStartMonth} />
         </div>
 
         {/* Key stats */}
@@ -51,6 +54,24 @@ export function CostCommandBar() {
 
       <StackedCostBar model={model} />
     </div>
+  );
+}
+
+function SeasonFlag({ startMonth }: { startMonth: number }) {
+  const o = scheduleOutcome(startMonth);
+  return (
+    <span
+      className={[
+        "mt-2 inline-block rounded-full border px-2.5 py-1 text-xs font-medium",
+        o.meets
+          ? "border-teal/30 bg-teal/10 text-teal"
+          : "border-orange/40 bg-orange/10 text-orange",
+      ].join(" ")}
+    >
+      {o.meets
+        ? `✓ SC ${o.scLabel} · meets 2030-31 season`
+        : `⚠ SC ${o.scLabel} · misses 2030-31 season`}
+    </span>
   );
 }
 

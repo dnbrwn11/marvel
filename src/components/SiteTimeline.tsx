@@ -1,200 +1,292 @@
-import { useMemo, useRef, useState, useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 // Read the SHARED single source of truth (the provider's one instance) so the
-// timeline's live total ties to the Program & Cost tab. useArena() returns the
-// same shape { model, ... } the component expects.
+// timeline's live total ties to the Program & Cost tab. useArena() returns
+// { model, ... } — we use model.constructionCostEscalated as the live total.
 import { useArena as useArenaModel } from "../state/ArenaModelContext";
+import { formatUSDCompact } from "./shared/currency";
+import { CONSTRUCTION_MONTHS, monthLabel, shortMonthLabel } from "../model/arenaCostModel";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// SITE TIMELINE — the "4D" showpiece.
-// Top: animated phase-schedule Gantt + cumulative cost S-curve (the real
-//      Feb 2028 → Aug 2030 construction sequence from the RFP).
-// Bottom: a 2D building cross-section that rises as the schedule progresses.
-// One scrubber + play button drives both. Cumulative cost is the LIVE escalated
-// total from useArenaModel, distributed across phases — so it always ties to the
-// Program & Cost tab.
+// SITE TIMELINE — a deliberate ~22s time-lapse of the build.
+// ONE shared timeline value `t` (0→1) drives everything: the Gantt fills, the
+// cumulative-spend curve overlaid on the Gantt, and the plan-view ring build.
+// Cumulative cost = live escalated total (useArenaModel) × phase-weighted %.
 // ─────────────────────────────────────────────────────────────────────────────
 
+const DURATION_MS = 22_000; // a full play-through takes ~22s
+
+const clamp01 = (x: number) => (x < 0 ? 0 : x > 1 ? 1 : x);
+const prog = (t: number, t0: number, t1: number) => clamp01((t - t0) / (t1 - t0));
+
+// Plan-view phases + cumulative-spend weights (weights sum to 1 so the spend
+// curve reaches the full escalated total at t = 1). Windows are fractions of t.
 interface Phase {
-  name: string;
-  t0: number; // start, 0..1 of construction window
-  t1: number; // finish
-  w: number;  // cost weight (share of total); weights sum to 1
-  col: string;
+  key: string;
+  label: string;
+  t0: number;
+  t1: number;
+  color: string;
+  weight: number;
 }
-
-// Real trade sequence (GAP RFP schedule), weighted to a realistic spend profile.
 const PHASES: Phase[] = [
-  { name: "Civil & utilities", t0: 0.0, t1: 0.16, w: 0.08, col: "#8C9298" },
-  { name: "Structural", t0: 0.1, t1: 0.42, w: 0.13, col: "#00B0A8" },
-  { name: "Parking garage", t0: 0.14, t1: 0.36, w: 0.09, col: "#4E5BA8" },
-  { name: "Architectural — exterior", t0: 0.34, t1: 0.64, w: 0.18, col: "#EC008C" },
-  { name: "Architectural — interior", t0: 0.48, t1: 0.82, w: 0.16, col: "#F5821F" },
-  { name: "Mechanical / plumbing", t0: 0.44, t1: 0.86, w: 0.13, col: "#9643FC" },
-  { name: "Electrical", t0: 0.5, t1: 0.88, w: 0.08, col: "#1D9E75" },
-  { name: "Low voltage", t0: 0.58, t1: 0.9, w: 0.05, col: "#378ADD" },
-  { name: "Specialty construction", t0: 0.66, t1: 0.94, w: 0.07, col: "#D85A30" },
-  { name: "Commissioning", t0: 0.9, t1: 1.0, w: 0.03, col: "#5F5E5A" },
+  { key: "foundations", label: "Foundations & site", t0: 0.0, t1: 0.12, color: "#9AA0A6", weight: 0.08 },
+  { key: "parking", label: "Parking garage", t0: 0.06, t1: 0.34, color: "#4E5BA8", weight: 0.1 },
+  { key: "structure", label: "Structure & concourse", t0: 0.12, t1: 0.42, color: "#00B0A8", weight: 0.2 },
+  { key: "upperBowl", label: "Upper bowl", t0: 0.3, t1: 0.55, color: "#F5821F", weight: 0.1 },
+  { key: "lowerBowl", label: "Lower bowl", t0: 0.34, t1: 0.6, color: "#F0997B", weight: 0.1 },
+  { key: "facade", label: "Façade", t0: 0.44, t1: 0.7, color: "#EC008C", weight: 0.12 },
+  { key: "roof", label: "Roof", t0: 0.54, t1: 0.74, color: "#9643FC", weight: 0.08 },
+  { key: "eventFloor", label: "Event floor & fit-out", t0: 0.6, t1: 0.9, color: "#1D9E75", weight: 0.17 },
+  { key: "commissioning", label: "Commissioning", t0: 0.9, t1: 1.0, color: "#5F5E5A", weight: 0.05 },
 ];
 
-const MONTHS = ["Feb 2028","Apr 2028","Jun 2028","Aug 2028","Oct 2028","Dec 2028","Feb 2029","Apr 2029","Jun 2029","Aug 2029","Oct 2029","Dec 2029","Feb 2030","Apr 2030","Jun 2030","Aug 2030"];
+// Gantt = the real trade sequence across Feb 2028 → Aug 2030.
+const GANTT: { label: string; t0: number; t1: number; color: string }[] = [
+  { label: "Civil & utilities", t0: 0.0, t1: 0.14, color: "#9AA0A6" },
+  { label: "Structural", t0: 0.12, t1: 0.42, color: "#00B0A8" },
+  { label: "Parking garage", t0: 0.06, t1: 0.34, color: "#4E5BA8" },
+  { label: "Architectural exterior", t0: 0.44, t1: 0.7, color: "#EC008C" },
+  { label: "Architectural interior", t0: 0.55, t1: 0.86, color: "#F5821F" },
+  { label: "Mechanical / plumbing", t0: 0.48, t1: 0.82, color: "#9643FC" },
+  { label: "Electrical", t0: 0.52, t1: 0.86, color: "#F0997B" },
+  { label: "Low voltage", t0: 0.62, t1: 0.9, color: "#378ADD" },
+  { label: "Specialty construction", t0: 0.7, t1: 0.94, color: "#1D9E75" },
+  { label: "Commissioning", t0: 0.9, t1: 1.0, color: "#5F5E5A" },
+];
 
-const fmtM = (v: number) => `$${(v / 1e6).toFixed(0)}M`;
 const costFrac = (t: number) =>
-  PHASES.reduce((s, p) => {
-    const f = Math.max(0, Math.min(1, (t - p.t0) / (p.t1 - p.t0)));
-    return s + p.w * f;
-  }, 0);
+  PHASES.reduce((s, p) => s + p.weight * prog(t, p.t0, p.t1), 0);
+
+// ── Gantt geometry ──
+const GX0 = 178, GX1 = 812, GW = GX1 - GX0;
+const GTOP = 28, GBOT = 312, GH = GBOT - GTOP;
+const gx = (f: number) => GX0 + f * GW;
+const gy = (cf: number) => GBOT - cf * GH;
+
+// ── Plan geometry / ring helpers ──
+const CX = 212, CY = 184, RF = 0.7;
+function ellipsePath(cx: number, cy: number, rx: number, ry: number) {
+  return `M ${cx - rx} ${cy} a ${rx} ${ry} 0 1 0 ${2 * rx} 0 a ${rx} ${ry} 0 1 0 ${-2 * rx} 0 Z`;
+}
+// True ring: outer ellipse + inner ellipse cutout via fill-rule evenodd.
+function ringPath(cx: number, cy: number, rxO: number, rxI: number) {
+  return `${ellipsePath(cx, cy, rxO, rxO * RF)} ${ellipsePath(cx, cy, rxI, rxI * RF)}`;
+}
+
+const MUTED = "#6B6E73", INK = "#1A1C1F", CARD = "#E3E5E8", TEAL = "#00B0A8";
 
 export default function SiteTimeline() {
-  const { model } = useArenaModel();
-  // Live escalated total from the engine (fallback keeps it renderable standalone)
-  const TOTAL = model?.constructionCostEscalated ?? 1_024_839_398;
+  const { model, inputs } = useArenaModel();
+  const total = model?.constructionCostEscalated ?? 1_024_839_398;
+  const start = inputs.constructionStartMonth; // schedule slides with the start date
+  const scMonth = start + CONSTRUCTION_MONTHS; // substantial completion
 
-  const [t, setT] = useState(0); // 0..1
+  const [t, setT] = useState(0);
   const [playing, setPlaying] = useState(false);
-  const raf = useRef<number | null>(null);
+  const tRef = useRef(0);
 
+  // rAF loop — time-based so a full play-through is ~22s regardless of frame rate.
   useEffect(() => {
     if (!playing) return;
-    const tick = () => {
-      setT((prev) => {
-        const next = prev + 0.006;
-        if (next >= 1) { setPlaying(false); return 1; }
-        raf.current = requestAnimationFrame(tick);
-        return next;
-      });
+    let raf = 0;
+    let last: number | null = null;
+    const tick = (ts: number) => {
+      if (last === null) last = ts;
+      const dt = ts - last;
+      last = ts;
+      const next = Math.min(1, tRef.current + dt / DURATION_MS);
+      tRef.current = next;
+      setT(next);
+      if (next >= 1) { setPlaying(false); return; }
+      raf = requestAnimationFrame(tick);
     };
-    raf.current = requestAnimationFrame(tick);
-    return () => { if (raf.current) cancelAnimationFrame(raf.current); };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
   }, [playing]);
 
-  const dateLabel = MONTHS[Math.min(15, Math.round(t * 15))];
+  const setBoth = (v: number) => { tRef.current = v; setT(v); };
+  const togglePlay = () => {
+    if (!playing && tRef.current >= 1) setBoth(0);
+    setPlaying((p) => !p);
+  };
+  const onScrub = (v: number) => { setPlaying(false); setBoth(v); };
+
+  // Derived readouts (all from the single shared t).
   const cf = costFrac(t);
-  const activePhase = useMemo(() => {
-    let a = PHASES[0].name;
-    PHASES.forEach((p) => {
-      const f = (t - p.t0) / (p.t1 - p.t0);
-      if (f > 0) a = p.name;
-    });
-    return t >= 1 ? "Complete — first event" : a;
-  }, [t]);
+  const cumulative = total * cf;
+  const pct = Math.round(cf * 100);
+  const dateLabel = monthLabel(start + Math.min(CONSTRUCTION_MONTHS, Math.round(t * CONSTRUCTION_MONTHS)));
+  let activeBar = GANTT[0].label;
+  GANTT.forEach((b) => { if (t >= b.t0) activeBar = b.label; });
+  const activeLabel = t >= 1 ? `Complete — first event · ${monthLabel(scMonth)}` : activeBar;
 
-  // ── schedule svg geometry ──
-  const SX = 140, SW = 680 - SX - 24, SY = 16, rowH = 20, gap = 4;
-  const barsBottom = SY + PHASES.length * (rowH + gap);
-  const curveTop = barsBottom + 18, curveBot = 290, curveH = curveBot - curveTop;
-  const curvePts = useMemo(() => {
-    const pts: [number, number][] = [];
-    const upto = Math.round(t * 120);
-    for (let k = 0; k <= upto; k++) {
-      const tt = k / 120;
-      pts.push([SX + tt * SW, curveBot - costFrac(tt) * curveH]);
-    }
-    return pts;
-  }, [t]);
-  const curveD = curvePts.length > 1 ? "M" + curvePts.map((p) => `${p[0].toFixed(1)} ${p[1].toFixed(1)}`).join(" L ") : "";
-  const areaD = curvePts.length > 1
-    ? `M${SX} ${curveBot} L` + curvePts.map((p) => `${p[0].toFixed(1)} ${p[1].toFixed(1)}`).join(" L ") + ` L${curvePts[curvePts.length - 1][0].toFixed(1)} ${curveBot} Z`
+  const pp: Record<string, number> = {};
+  PHASES.forEach((p) => { pp[p.key] = prog(t, p.t0, p.t1); });
+
+  // Cumulative-spend curve points (drawn up to current t so it climbs).
+  const steps = Math.max(1, Math.round(t * 160));
+  const pts: [number, number][] = [];
+  for (let k = 0; k <= steps; k++) {
+    const tt = t * (k / steps);
+    pts.push([gx(tt), gy(costFrac(tt))]);
+  }
+  const lineD = "M " + pts.map((p) => `${p[0].toFixed(1)} ${p[1].toFixed(1)}`).join(" L ");
+  const areaD = pts.length > 1
+    ? `M ${gx(0)} ${GBOT} L ${pts.map((p) => `${p[0].toFixed(1)} ${p[1].toFixed(1)}`).join(" L ")} L ${pts[pts.length - 1][0].toFixed(1)} ${GBOT} Z`
     : "";
-  const markerX = SX + t * SW;
-
-  // ── section pieces: {el jsx, at (costFrac threshold), span} ──
-  const base = 190;
-  const sectionOpacity = (at: number, span = 0.12) => Math.max(0, Math.min(1, (cf - at) / span));
 
   return (
-    <div style={{ fontFamily: "Barlow, Inter, system-ui, sans-serif" }}>
+    <div className="space-y-6">
       {/* Readouts */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", flexWrap: "wrap", gap: 12, marginBottom: 12 }}>
-        <div>
-          <div style={{ fontSize: 12, fontWeight: 500, color: "#6B6E73", letterSpacing: ".04em" }}>CONSTRUCTION PROGRESS</div>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 14, marginTop: 2 }}>
-            <span style={{ fontSize: 26, fontWeight: 500, color: "#1A1C1F" }}>{dateLabel}</span>
-            <span style={{ fontSize: 14, color: "#00B0A8", fontWeight: 500 }}>{activePhase}</span>
+      <div className="rounded-2xl border border-card bg-surface p-6 shadow-sm">
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <div className="text-[11px] font-semibold uppercase tracking-wider text-muted">
+              Construction progress
+            </div>
+            <div className="mt-1 flex items-baseline gap-3">
+              <span className="font-display text-3xl font-light text-ink">{dateLabel}</span>
+              <span className="text-sm font-medium text-teal">{activeLabel}</span>
+            </div>
+          </div>
+          <div className="flex gap-8">
+            <div className="text-right">
+              <div className="text-[11px] font-semibold uppercase tracking-wider text-muted">Cumulative cost</div>
+              <div className="mt-1 font-display text-3xl font-light tabular-nums text-teal">{formatUSDCompact(cumulative)}</div>
+            </div>
+            <div className="text-right">
+              <div className="text-[11px] font-semibold uppercase tracking-wider text-muted">Complete</div>
+              <div className="mt-1 font-display text-3xl font-light tabular-nums text-ink">{pct}%</div>
+            </div>
           </div>
         </div>
-        <div style={{ display: "flex", gap: 22 }}>
-          <div style={{ textAlign: "right" }}>
-            <div style={{ fontSize: 12, color: "#6B6E73" }}>Cumulative cost</div>
-            <div style={{ fontSize: 22, fontWeight: 500, color: "#00B0A8" }}>{fmtM(cf * TOTAL)}</div>
-          </div>
-          <div style={{ textAlign: "right" }}>
-            <div style={{ fontSize: 12, color: "#6B6E73" }}>Complete</div>
-            <div style={{ fontSize: 22, fontWeight: 500, color: "#1A1C1F" }}>{Math.round(cf * 100)}%</div>
-          </div>
+        <div className="gap-tricolor mt-4 rounded-full" />
+      </div>
+
+      {/* Gantt + cumulative spend */}
+      <div className="rounded-2xl border border-card bg-surface p-6 shadow-sm">
+        <div className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-teal">
+          Phase schedule &amp; cumulative spend
         </div>
+        <svg viewBox="0 0 900 344" width="100%" role="img" aria-label="Phase schedule Gantt with cumulative spend curve">
+          {/* Gantt bars */}
+          {GANTT.map((b, i) => {
+            const y = GTOP + i * ((GH - 8) / GANTT.length);
+            const h = (GH - 8) / GANTT.length - 6;
+            const x0 = gx(b.t0), x1 = gx(b.t1);
+            const f = prog(t, b.t0, b.t1);
+            return (
+              <g key={b.label}>
+                <text x={GX0 - 10} y={y + h / 2 + 4} textAnchor="end" fontSize={10.5} fill={INK}>{b.label}</text>
+                <rect x={x0} y={y} width={Math.max(0, x1 - x0)} height={h} rx={3} fill={b.color} opacity={0.16} />
+                <rect x={x0} y={y} width={Math.max(0, (x1 - x0) * f)} height={h} rx={3} fill={b.color} />
+              </g>
+            );
+          })}
+
+          {/* Right $ axis */}
+          <line x1={GX1} y1={GTOP} x2={GX1} y2={GBOT} stroke={CARD} strokeWidth={1} />
+          <text x={GX1 + 8} y={GTOP + 4} fontSize={10} fill={MUTED}>{formatUSDCompact(total)}</text>
+          <text x={GX1 + 8} y={gy(0.5) + 3} fontSize={10} fill={MUTED}>{formatUSDCompact(total * 0.5)}</text>
+          <text x={GX1 + 8} y={GBOT + 2} fontSize={10} fill={MUTED}>$0</text>
+          <text x={GX1 + 8} y={GTOP - 12} fontSize={9} fill={MUTED} fontWeight={600}>CUM. SPEND</text>
+
+          {/* Cumulative-spend curve (on top of the Gantt) */}
+          {areaD && <path d={areaD} fill={TEAL} opacity={0.08} />}
+          {pts.length > 1 && <path d={lineD} fill="none" stroke={TEAL} strokeWidth={3} strokeLinejoin="round" />}
+          {/* current-time cursor + marker */}
+          <line x1={gx(t)} y1={GTOP} x2={gx(t)} y2={GBOT} stroke={INK} strokeWidth={1} strokeDasharray="3 3" opacity={0.35} />
+          <circle cx={gx(t)} cy={gy(cf)} r={5} fill={TEAL} stroke="#fff" strokeWidth={2} />
+
+          {/* x-axis labels */}
+          <text x={gx(0)} y={GBOT + 20} fontSize={10} fill={MUTED} textAnchor="start">{shortMonthLabel(start)} · start</text>
+          <text x={gx(0.5)} y={GBOT + 20} fontSize={10} fill={MUTED} textAnchor="middle">construction</text>
+          <text x={gx(1)} y={GBOT + 20} fontSize={10} fill={MUTED} textAnchor="end">{shortMonthLabel(scMonth)}</text>
+        </svg>
       </div>
 
-      {/* Schedule + cash flow */}
-      <div style={{ fontSize: 11, fontWeight: 500, color: "#6B6E73", letterSpacing: ".04em", marginBottom: 4 }}>PHASE SCHEDULE & CASH FLOW</div>
-      <svg width="100%" viewBox="0 0 680 300" style={{ display: "block", background: "#F6F7F8", borderRadius: 12 }} role="img">
-        <title>Phase schedule and cumulative cost curve</title>
-        {PHASES.map((p, i) => {
-          const y = SY + i * (rowH + gap);
-          const x0 = SX + p.t0 * SW, x1 = SX + p.t1 * SW;
-          const f = Math.max(0, Math.min(1, (t - p.t0) / (p.t1 - p.t0)));
-          return (
-            <g key={p.name}>
-              <text x={SX - 8} y={y + rowH / 2 + 4} textAnchor="end" fontSize={11} fill="#44443F">{p.name}</text>
-              <rect x={x0} y={y} width={x1 - x0} height={rowH} rx={4} fill={p.col} opacity={0.18} />
-              <rect x={x0} y={y} width={(x1 - x0) * f} height={rowH} rx={4} fill={p.col} />
-            </g>
-          );
-        })}
-        <line x1={SX} y1={curveBot} x2={SX + SW} y2={curveBot} stroke="#C4C8CC" strokeWidth={1} />
-        <text x={SX - 8} y={curveTop + 6} textAnchor="end" fontSize={10} fill="#6B6E73">{fmtM(TOTAL)}</text>
-        <text x={SX - 8} y={curveBot} textAnchor="end" fontSize={10} fill="#6B6E73">$0</text>
-        {areaD && <path d={areaD} fill="#00B0A8" opacity={0.1} />}
-        {curveD && <path d={curveD} fill="none" stroke="#00B0A8" strokeWidth={2} />}
-        <line x1={markerX} y1={SY} x2={markerX} y2={curveBot} stroke="#1A1C1F" strokeWidth={1} strokeDasharray="3 3" opacity={0.5} />
-        <circle cx={markerX} cy={curveBot - cf * curveH} r={4} fill="#00B0A8" />
-      </svg>
+      {/* Plan-view rings + parking */}
+      <div className="rounded-2xl border border-card bg-surface p-6 shadow-sm">
+        <div className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-teal">
+          Arena plan — build sequence
+        </div>
+        <svg viewBox="0 0 720 380" width="100%" role="img" aria-label="Plan view of the arena building ring by ring">
+          {/* Foundations pad (base, under the rings) */}
+          <path d={ellipsePath(CX, CY, 208, 208 * RF)} fill="#9AA0A6" opacity={0.45 * pp.foundations} />
 
-      {/* Building section */}
-      <div style={{ fontSize: 11, fontWeight: 500, color: "#6B6E73", letterSpacing: ".04em", margin: "14px 0 4px" }}>BUILDING SECTION</div>
-      <svg width="100%" viewBox="0 0 680 220" style={{ display: "block", background: "#F6F7F8", borderRadius: 12 }} role="img">
-        <title>Building cross-section rising</title>
-        <line x1={60} y1={base} x2={620} y2={base} stroke="#B4B2A9" strokeWidth={2} />
-        {/* foundation */}
-        <path d={`M150 ${base} L530 ${base} L520 ${base - 12} L160 ${base - 12} Z`} fill="#9AA0A6" opacity={sectionOpacity(0.0, 0.08)} />
-        {/* structure columns */}
-        {[180, 255, 330, 405, 480].map((x) => (
-          <rect key={x} x={x} y={base - 110} width={12} height={110} fill="#00B0A8" opacity={sectionOpacity(0.1, 0.3)} />
-        ))}
-        {/* bowl */}
-        <path d={`M235 ${base - 12} L300 ${base - 70} L380 ${base - 70} L445 ${base - 12} Z`} fill="#F5821F" opacity={sectionOpacity(0.2, 0.3)} />
-        {/* upper deck */}
-        <path d={`M255 ${base - 72} L300 ${base - 100} L380 ${base - 100} L425 ${base - 72} Z`} fill="#F0997B" opacity={sectionOpacity(0.35, 0.2)} />
-        {/* roof */}
-        <path d={`M165 ${base - 110} L340 ${base - 150} L515 ${base - 110} L515 ${base - 122} L340 ${base - 162} L165 ${base - 122} Z`} fill="#7E4FB0" opacity={sectionOpacity(0.55, 0.18)} />
-        {/* façade walls */}
-        <rect x={160} y={base - 118} width={14} height={106} fill="#EC008C" opacity={sectionOpacity(0.62, 0.18)} />
-        <rect x={506} y={base - 118} width={14} height={106} fill="#EC008C" opacity={sectionOpacity(0.62, 0.18)} />
-        {/* fit-out core */}
-        <rect x={290} y={base - 58} width={100} height={46} rx={3} fill="#1D9E75" opacity={sectionOpacity(0.72, 0.2)} />
-      </svg>
+          {/* Rings — true annular rings via fill-rule evenodd; each in its own band */}
+          <path d={ringPath(CX, CY, 200, 190)} fillRule="evenodd" fill="#EC008C" opacity={pp.facade} />
+          <path d={ringPath(CX, CY, 188, 156)} fillRule="evenodd" fill="#00B0A8" opacity={pp.structure} />
+          <path d={ringPath(CX, CY, 154, 124)} fillRule="evenodd" fill="#F5821F" opacity={pp.upperBowl} />
+          <path d={ringPath(CX, CY, 122, 90)} fillRule="evenodd" fill="#F0997B" opacity={pp.lowerBowl} />
 
-      {/* Controls */}
-      <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 12 }}>
-        <button
-          onClick={() => setPlaying((p) => !p)}
-          style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 16px", borderRadius: 8, border: "none", background: "#00B0A8", color: "#fff", fontWeight: 500, fontSize: 14, cursor: "pointer" }}
-        >
-          <i className={`ti ${playing ? "ti-player-pause" : "ti-player-play"}`} aria-hidden="true" />
-          <span>{playing ? "Pause" : "Play"}</span>
-        </button>
-        <input
-          type="range" min={0} max={120} value={Math.round(t * 120)} step={1}
-          onChange={(e) => { setPlaying(false); setT(+e.target.value / 120); }}
-          style={{ flex: 1 }}
-        />
-      </div>
-      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "#6B6E73", marginTop: 4, padding: "0 2px" }}>
-        <span>Feb 2028 · start</span><span>construction</span><span>Aug 2030 · first event</span>
+          {/* Event floor (solid center) + court */}
+          <path d={ellipsePath(CX, CY, 88, 88 * RF)} fill="#1D9E75" opacity={pp.eventFloor} />
+          <rect x={CX - 34} y={CY - 15} width={68} height={30} rx={3} fill="#FFFFFF" opacity={0.85 * pp.eventFloor} />
+          <line x1={CX} y1={CY - 15} x2={CX} y2={CY + 15} stroke="#1D9E75" strokeWidth={1.5} opacity={0.7 * pp.eventFloor} />
+
+          {/* Roof overlay (semi-transparent, reads as an overlay above the bowl) */}
+          <path d={ringPath(CX, CY, 176, 104)} fillRule="evenodd" fill="#9643FC" opacity={0.55 * pp.roof} />
+
+          <text x={CX} y={CY + 168} textAnchor="middle" fontSize={12} fill={MUTED} fontWeight={600}>Arena bowl</text>
+
+          {/* Parking garage — rounded rect with deck grid appearing as it builds */}
+          <g>
+            <rect x={470} y={118} width={200} height={150} rx={12} fill="#4E5BA8" opacity={pp.parking} />
+            {[1, 2, 3, 4, 5].map((k) => (
+              <line key={k} x1={470 + (k * 200) / 6} y1={118} x2={470 + (k * 200) / 6} y2={268}
+                stroke="#FFFFFF" strokeWidth={1} opacity={0.8 * pp.parking} />
+            ))}
+            <line x1={470} y1={193} x2={670} y2={193} stroke="#FFFFFF" strokeWidth={1} opacity={0.8 * pp.parking} />
+            <text x={570} y={300} textAnchor="middle" fontSize={12} fill={MUTED} fontWeight={600}>Parking garage</text>
+          </g>
+        </svg>
+
+        {/* Phase color legend */}
+        <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5 text-xs text-muted">
+          {PHASES.map((p) => (
+            <span key={p.key} className="flex items-center gap-1.5">
+              <span className="h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: p.color }} />
+              {p.label}
+            </span>
+          ))}
+        </div>
+        <p className="mt-3 text-xs text-muted">
+          Plan-view build sequence driven by the shared timeline · cumulative cost distributed from the live program model.
+        </p>
       </div>
 
-      <div style={{ fontSize: 11, color: "#6B6E73", marginTop: 10 }}>
-        Schedule per GAP Partners RFP sequence · cumulative cost distributed from the live program model.
+      {/* Shared controls */}
+      <div className="rounded-2xl border border-card bg-surface p-4 shadow-sm">
+        <div className="flex items-center gap-4">
+          <button
+            type="button"
+            onClick={togglePlay}
+            className="flex items-center gap-2 rounded-lg bg-teal px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:brightness-95"
+          >
+            {playing ? (
+              <svg viewBox="0 0 20 20" className="h-4 w-4" fill="currentColor"><rect x="5" y="4" width="4" height="12" rx="1" /><rect x="11" y="4" width="4" height="12" rx="1" /></svg>
+            ) : (
+              <svg viewBox="0 0 20 20" className="h-4 w-4" fill="currentColor"><path d="M6 4l10 6-10 6V4z" /></svg>
+            )}
+            <span>{playing ? "Pause" : t >= 1 ? "Replay" : "Play"}</span>
+          </button>
+          <input
+            type="range"
+            min={0}
+            max={1000}
+            step={1}
+            value={Math.round(t * 1000)}
+            onChange={(e) => onScrub(Number(e.target.value) / 1000)}
+            className="flex-1 accent-teal"
+            aria-label="Timeline scrubber"
+          />
+        </div>
+        <div className="mt-2 flex justify-between px-1 text-[11px] text-muted">
+          <span>{monthLabel(start)} · start</span>
+          <span>~22s time-lapse · construction sequence</span>
+          <span>{monthLabel(scMonth)} · first event</span>
+        </div>
       </div>
     </div>
   );

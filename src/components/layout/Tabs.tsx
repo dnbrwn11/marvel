@@ -23,7 +23,7 @@ export function Tabs({ tabs }: { tabs: TabDef[] }) {
         <div
           role="tablist"
           aria-label="Views"
-          className="mx-auto flex max-w-7xl gap-1 px-4"
+          className="no-scrollbar mx-auto flex max-w-7xl gap-1 overflow-x-auto px-4"
         >
           {tabs.map((tab) => {
             const selected = tab.id === active?.id;
@@ -34,7 +34,7 @@ export function Tabs({ tabs }: { tabs: TabDef[] }) {
                 aria-selected={selected}
                 onClick={() => setActiveId(tab.id)}
                 className={[
-                  "relative -mb-px px-4 py-3 text-sm font-medium transition-colors duration-150 focus:outline-none",
+                  "relative -mb-px shrink-0 whitespace-nowrap px-4 py-3 text-sm font-medium transition-colors duration-150 focus:outline-none",
                   selected
                     ? "text-teal"
                     : "text-muted hover:text-ink",

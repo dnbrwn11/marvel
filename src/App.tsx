@@ -11,6 +11,7 @@ import type { TabDef } from "./components/layout/Tabs";
 import { Banner } from "./components/layout/Banner";
 import { ProgramAndCost } from "./components/program/ProgramAndCost";
 import { AnalyticsPanel } from "./components/analytics/AnalyticsPanel";
+import { ManpowerPanel } from "./components/manpower/ManpowerPanel";
 import SiteTimeline from "./components/SiteTimeline";
 
 // Page-container wrapper so the timeline showpiece gets the same max-width and
@@ -26,6 +27,7 @@ function SiteTimelineTab() {
 const TABS: TabDef[] = [
   { id: "program", label: "Program & Cost", component: ProgramAndCost },
   { id: "analytics", label: "Analytics", component: AnalyticsPanel },
+  { id: "manpower", label: "Manpower & Resourcing", component: ManpowerPanel },
   { id: "timeline", label: "Site Timeline", component: SiteTimelineTab },
 ];
 

@@ -21,7 +21,8 @@ export interface Inputs {
   premiumPct: number;            // % of GSF that is premium / club space
   leedTier: "none" | "silver" | "gold" | "platinum"; // sustainability certification
   scoreboardTier: "standard" | "premium" | "marquee"; // center-hung scoreboard tier
-  escalationPct: number;     // % escalation to construction midpoint (adjustable)
+  constructionStartMonth: number; // start date as months since year 0 (year*12 + monthIndex)
+  annualEscalationRate: number;   // annual % escalation; compounds start→midpoint
   // ── GAP submitted GMP fee structure (real submitted rates, not placeholders) ─
   gcGrPct: number;           // general conditions / general requirements % (GAP: $72,332,434 GC lump)
   feePct: number;            // Contractor's Fee %

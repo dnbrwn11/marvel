@@ -52,6 +52,11 @@ export function SensitivityPanel({
       scenario: `${inputs.parkingStalls.toLocaleString()} stalls to grade`,
       delta: cost({ structuredParkingPct: 0 }) - cost({ structuredParkingPct: 100 }),
     },
+    {
+      label: "1-year delayed start",
+      scenario: "extra escalation from a later start",
+      delta: cost({ constructionStartMonth: inputs.constructionStartMonth + 12 }) - base,
+    },
   ];
 
   return (
@@ -63,7 +68,7 @@ export function SensitivityPanel({
         Each figure is the model re-run with that single decision changed · adds in
         teal, savings in magenta
       </p>
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-6">
         {levers.map((lever) => (
           <DeltaCard key={lever.label} {...lever} />
         ))}

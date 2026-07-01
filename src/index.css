@@ -61,6 +61,16 @@ body {
   animation: rowIn 300ms ease-out both;
 }
 
+/* Hide the scrollbar on the horizontally-scrolling tab bar (still scrollable /
+   swipeable) so the nav stays clean on mobile. */
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
 /* The GAP signature: teal → magenta → orange, equal thirds. */
 .gap-tricolor {
   height: 4px;
