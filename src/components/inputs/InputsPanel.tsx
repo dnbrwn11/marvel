@@ -5,6 +5,7 @@
 // Layout-agnostic: renders a vertical stack of section cards so it drops cleanly
 // into the ~40% left column (and stacks on top on narrow screens).
 
+import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { useArena } from "../../state/ArenaModelContext";
 import { monthLabel, scheduleOutcome } from "../../model/arenaCostModel";
@@ -12,21 +13,50 @@ import { Slider } from "./controls/Slider";
 import { SegmentedToggle } from "./controls/SegmentedToggle";
 import { Switch } from "./controls/Switch";
 
-export function InputsPanel() {
+export function InputsPanel({
+  focus,
+}: {
+  /** When set (with a fresh nonce), scroll that control into view + highlight it. */
+  focus?: { id: string; nonce: number } | null;
+} = {}) {
   const { inputs, setInput } = useArena();
+  const [highlightId, setHighlightId] = useState<string | null>(null);
+
+  // Scroll the requested control into view. Delayed so the drawer's open/expand
+  // transition (~300ms) finishes first, then a brief highlight draws the eye.
+  useEffect(() => {
+    if (!focus) return;
+    const t = window.setTimeout(() => {
+      const el = document.getElementById(`ctl-${focus.id}`);
+      if (!el) return;
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      setHighlightId(focus.id);
+    }, 320);
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focus?.nonce]);
+
+  // Auto-clear the highlight so it reads as a transient pulse.
+  useEffect(() => {
+    if (!highlightId) return;
+    const t = window.setTimeout(() => setHighlightId(null), 1400);
+    return () => window.clearTimeout(t);
+  }, [highlightId]);
 
   return (
     <div className="space-y-5">
       {/* Seating & Premium — building program drivers */}
       <Section title="Seating & Premium">
-          <Slider
-            label="Fixed seats"
-            value={inputs.seats}
-            min={12000}
-            max={22000}
-            step={100}
-            onChange={(v) => setInput("seats", v)}
-          />
+          <Anchor id="seats" active={highlightId === "seats"}>
+            <Slider
+              label="Fixed seats"
+              value={inputs.seats}
+              min={12000}
+              max={22000}
+              step={100}
+              onChange={(v) => setInput("seats", v)}
+            />
+          </Anchor>
           <Slider
             label="Building area"
             value={inputs.gsf}
@@ -44,14 +74,16 @@ export function InputsPanel() {
             step={1}
             onChange={(v) => setInput("suites", v)}
           />
-          <Slider
-            label="Club seats"
-            value={inputs.clubSeats}
-            min={800}
-            max={4000}
-            step={50}
-            onChange={(v) => setInput("clubSeats", v)}
-          />
+          <Anchor id="club-seats" active={highlightId === "club-seats"}>
+            <Slider
+              label="Club seats"
+              value={inputs.clubSeats}
+              min={800}
+              max={4000}
+              step={50}
+              onChange={(v) => setInput("clubSeats", v)}
+            />
+          </Anchor>
           <Slider
             label="Premium program size"
             value={inputs.premiumPct}
@@ -145,25 +177,29 @@ export function InputsPanel() {
 
         {/* Cost Assumptions */}
         <Section title="Cost Assumptions">
-          <Slider
-            label="Construction start"
-            value={inputs.constructionStartMonth}
-            min={2027 * 12}
-            max={2031 * 12}
-            step={1}
-            format={(v) => monthLabel(v)}
-            onChange={(v) => setInput("constructionStartMonth", v)}
-          />
-          <Slider
-            label="Annual escalation rate"
-            value={inputs.annualEscalationRate}
-            min={0}
-            max={8}
-            step={0.25}
-            unit="%/yr"
-            format={(v) => v.toFixed(2)}
-            onChange={(v) => setInput("annualEscalationRate", v)}
-          />
+          <Anchor id="construction-start" active={highlightId === "construction-start"}>
+            <Slider
+              label="Construction start"
+              value={inputs.constructionStartMonth}
+              min={2027 * 12}
+              max={2031 * 12}
+              step={1}
+              format={(v) => monthLabel(v)}
+              onChange={(v) => setInput("constructionStartMonth", v)}
+            />
+          </Anchor>
+          <Anchor id="escalation" active={highlightId === "escalation"}>
+            <Slider
+              label="Annual escalation rate"
+              value={inputs.annualEscalationRate}
+              min={0}
+              max={8}
+              step={0.25}
+              unit="%/yr"
+              format={(v) => v.toFixed(2)}
+              onChange={(v) => setInput("annualEscalationRate", v)}
+            />
+          </Anchor>
           <ScheduleOutcome startMonth={inputs.constructionStartMonth} />
           <SegmentedToggle
             label="LEED / sustainability tier"
@@ -182,6 +218,22 @@ export function InputsPanel() {
             {inputs.preconFeePct}% / {inputs.bondPct}%) and are fixed for this phase.
           </p>
         </Section>
+    </div>
+  );
+}
+
+// Scroll/highlight anchor around a control. The ring is box-shadow based, so
+// toggling `active` never shifts layout. id becomes `ctl-<id>` for scrollIntoView.
+function Anchor({ id, active, children }: { id: string; active: boolean; children: ReactNode }) {
+  return (
+    <div
+      id={`ctl-${id}`}
+      className={[
+        "scroll-mt-4 rounded-lg transition-shadow duration-300",
+        active ? "bg-teal/5 shadow-[0_0_0_2px_var(--color-teal)]" : "",
+      ].join(" ")}
+    >
+      {children}
     </div>
   );
 }

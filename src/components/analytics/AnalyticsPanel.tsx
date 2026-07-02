@@ -19,7 +19,7 @@ export function AnalyticsPanel() {
 
   return (
     <div className="mx-auto max-w-7xl space-y-6 px-6 py-8">
-      <InsightStrip model={model} phasing={phasing} />
+      <InsightStrip model={model} phasing={phasing} inputs={inputs} rates={rates} />
       <CostPerSeatBenchmark model={model} />
       <SensitivityPanel inputs={inputs} model={model} rates={rates} />
       <CashFlowChart phasing={phasing} />

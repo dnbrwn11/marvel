@@ -10,9 +10,12 @@ import { AssumptionsPanel } from "../inputs/AssumptionsPanel";
 export function ProgramDrawer({
   open,
   onClose,
+  focus,
 }: {
   open: boolean;
   onClose: () => void;
+  /** Scroll-to-control request forwarded to InputsPanel. */
+  focus?: { id: string; nonce: number } | null;
 }) {
   return (
     <div
@@ -40,7 +43,7 @@ export function ProgramDrawer({
             </button>
           </div>
           <div className="max-h-[72vh] space-y-5 overflow-y-auto p-5">
-            <InputsPanel />
+            <InputsPanel focus={focus} />
             <AssumptionsPanel />
           </div>
         </div>

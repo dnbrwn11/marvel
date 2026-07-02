@@ -59,6 +59,11 @@ export function SensitivityPanel({
     },
   ];
 
+  // Rank by magnitude of impact so the biggest cost/schedule levers lead.
+  const orderedLevers = [...levers].sort(
+    (a, b) => Math.abs(b.delta) - Math.abs(a.delta),
+  );
+
   return (
     <div className="rounded-2xl border border-card bg-surface p-6 shadow-sm">
       <div className="text-xs font-semibold uppercase tracking-wider text-teal">
@@ -69,7 +74,7 @@ export function SensitivityPanel({
         teal, savings in magenta
       </p>
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-6">
-        {levers.map((lever) => (
+        {orderedLevers.map((lever) => (
           <DeltaCard key={lever.label} {...lever} />
         ))}
       </div>

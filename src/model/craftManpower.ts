@@ -1,4 +1,4 @@
-// ─────────────────────────────────────────────────────────────────────────────
+2// ─────────────────────────────────────────────────────────────────────────────
 // CRAFT MANPOWER — parametric derivation from the cost model.
 //
 // ⚠️  PARAMETRIC: craft (trade) labor is DERIVED from construction cost, not from

@@ -18,17 +18,64 @@ import { colors } from "../../brand/tokens";
 import { formatUSD, formatUSDCompact } from "../shared/currency";
 
 // Public comparables — APPROXIMATE, from public reporting (total construction
-// cost ÷ seating capacity). External benchmarks only; NOT derived from the model.
+// cost ÷ seating capacity), in as-built dollars at opening. External benchmarks
+// only; values are NOT escalated and NOT derived from the model. Opening year is
+// appended to the label to make the year-of-cost basis explicit.
 const COMPARABLES = [
-  { name: "Fiserv Forum", perSeat: 30_000 },
-  { name: "Chase Center", perSeat: 77_000 },
-  { name: "Intuit Dome", perSeat: 111_000 },
+  { name: "Fiserv Forum ('18)", perSeat: 30_000 },
+  { name: "Chase Center ('19)", perSeat: 77_000 },
+  { name: "Intuit Dome ('24)", perSeat: 111_000 },
 ];
+
+const SELF_LABEL = "Spurs Arena (this model, escalated to '30)";
+
+// Greedy word-wrap so a long category label renders on multiple lines instead of
+// truncating (the self label is intentionally verbose about its escalation basis).
+function wrapLabel(text: string, maxChars: number): string[] {
+  const words = text.split(" ");
+  const lines: string[] = [];
+  let cur = "";
+  for (const w of words) {
+    if (!cur) cur = w;
+    else if ((cur + " " + w).length <= maxChars) cur += " " + w;
+    else {
+      lines.push(cur);
+      cur = w;
+    }
+  }
+  if (cur) lines.push(cur);
+  return lines;
+}
+
+// Custom Y-axis tick: right-anchored, wrapped to as many lines as needed and
+// vertically centered on the bar, so no comparable label is ever clipped.
+function BenchmarkTick({
+  x = 0,
+  y = 0,
+  payload,
+}: {
+  x?: number;
+  y?: number;
+  payload?: { value?: string | number };
+}) {
+  const lines = wrapLabel(String(payload?.value ?? ""), 24);
+  const lineHeight = 12.5;
+  const offset = -((lines.length - 1) / 2) * lineHeight + 4;
+  return (
+    <text x={x} y={y} textAnchor="end" fontSize={12} fill={colors.ink}>
+      {lines.map((line, i) => (
+        <tspan key={i} x={x} dy={i === 0 ? offset : lineHeight}>
+          {line}
+        </tspan>
+      ))}
+    </text>
+  );
+}
 
 export function CostPerSeatBenchmark({ model }: { model: ModelResult }) {
   const data = [
     ...COMPARABLES.map((c) => ({ ...c, self: false })),
-    { name: "Spurs Arena (this model)", perSeat: Math.round(model.costPerSeat), self: true },
+    { name: SELF_LABEL, perSeat: Math.round(model.costPerSeat), self: true },
   ].sort((a, b) => a.perSeat - b.perSeat);
 
   return (
@@ -59,8 +106,8 @@ export function CostPerSeatBenchmark({ model }: { model: ModelResult }) {
             <YAxis
               type="category"
               dataKey="name"
-              width={150}
-              tick={{ fill: colors.ink, fontSize: 12 }}
+              width={176}
+              tick={<BenchmarkTick />}
               axisLine={false}
               tickLine={false}
             />
@@ -97,6 +144,9 @@ export function CostPerSeatBenchmark({ model }: { model: ModelResult }) {
           </BarChart>
         </ResponsiveContainer>
       </div>
+      <p className="mt-3 text-xs text-muted">
+        Comparables shown in as-built dollars at opening; not escalated to a common year.
+      </p>
     </div>
   );
 }
