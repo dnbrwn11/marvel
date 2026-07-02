@@ -13,6 +13,7 @@ import { ProgramAndCost } from "./components/program/ProgramAndCost";
 import { AnalyticsPanel } from "./components/analytics/AnalyticsPanel";
 import { ManpowerPanel } from "./components/manpower/ManpowerPanel";
 import SiteTimeline from "./components/SiteTimeline";
+import { RiskRegisterTab } from "./components/risk/RiskRegisterTab";
 
 // Page-container wrapper so the timeline showpiece gets the same max-width and
 // padding as the other tabs (the component itself is unchanged).
@@ -29,6 +30,7 @@ const TABS: TabDef[] = [
   { id: "analytics", label: "Analytics", component: AnalyticsPanel },
   { id: "manpower", label: "Manpower & Resourcing", component: ManpowerPanel },
   { id: "timeline", label: "Site Timeline", component: SiteTimelineTab },
+  { id: "risk", label: "Risk Register", component: RiskRegisterTab },
 ];
 
 function App() {
