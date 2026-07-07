@@ -13,6 +13,7 @@ import { SensitivityPanel } from "./SensitivityPanel";
 import { CashFlowChart } from "./CashFlowChart";
 import { CostShareDonut } from "./CostShareDonut";
 import { CostByGroupChart } from "../summary/CostByGroupChart";
+import { FunctionalAreaChart } from "./FunctionalAreaChart";
 
 export function AnalyticsPanel() {
   const { inputs, model, phasing, rates } = useArena();
@@ -27,6 +28,7 @@ export function AnalyticsPanel() {
         <CostShareDonut model={model} />
         <CostByGroupChart model={model} />
       </div>
+      <FunctionalAreaChart model={model} />
     </div>
   );
 }

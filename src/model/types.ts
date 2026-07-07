@@ -32,6 +32,20 @@ export interface Inputs {
   changeOrderMarkupPct: number; // CO markup % — stored for reference, NOT in base total
 }
 
+// Functional-area tagging: an orthogonal, additive grouping of line items by
+// what part of the building they serve (vs. LineItemGroup's trade divisions).
+// Purely a re-grouping — carries no cost math of its own.
+export type FunctionalArea =
+  | "Seating Bowl"
+  | "Premium / Suites"
+  | "Concourse / Circulation"
+  | "Food & Beverage"
+  | "Back of House / Ops"
+  | "Event / Technology"
+  | "Building Systems"
+  | "Envelope"
+  | "Site / Parking";
+
 export type LineItemGroup =
   | "Site & Structure"
   | "Enclosure & Interiors"
@@ -54,6 +68,7 @@ export interface LineItem {
   qty?: number;        // quantity for the unit-rate takeoff
   unit?: string;       // unit of measure for qty (e.g. "GSF", "seat", "stall")
   unitRate?: number;   // $ per unit (extended cost ÷ qty)
+  functionalArea?: FunctionalArea; // additive tag; never feeds cost math
 }
 
 export interface ModelResult {

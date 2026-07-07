@@ -15,6 +15,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import type {
+  FunctionalArea,
   Inputs,
   LineItem,
   ModelResult,
@@ -23,6 +24,7 @@ import type {
 } from "./types";
 
 export type {
+  FunctionalArea,
   Inputs,
   LineItem,
   LineItemGroup,
@@ -181,6 +183,67 @@ function fmtRate(rate: number): string {
     : (Math.round(rate * 100) / 100).toString();
 }
 
+// ── FUNCTIONAL AREA TAGGING ──────────────────────────────────────────────────
+// Additive re-grouping of line items by the part of the building they serve —
+// orthogonal to the trade divisions (LineItemGroup). Tags carry NO cost math;
+// they are assigned at item creation and rolled up by rollupByFunctionalArea.
+// Default mapping is by parent key; child-level overrides handle parents that
+// mix functions (e.g. concourse: circulation vs. F&B children).
+const AREA_BY_PARENT: Record<string, FunctionalArea> = {
+  bowl: "Seating Bowl",
+  premium: "Premium / Suites",
+  premuplift: "Premium / Suites",
+  concourse: "Concourse / Circulation", // F&B children overridden below
+  conveying: "Concourse / Circulation",
+  boh: "Back of House / Ops",
+  scoreboard: "Event / Technology",
+  tech: "Event / Technology",
+  ribbon: "Event / Technology",
+  lowvolt: "Event / Technology",
+  structure: "Building Systems",
+  interiors: "Building Systems",
+  mech: "Building Systems",
+  elec: "Building Systems",
+  fire: "Building Systems",
+  ice: "Building Systems",
+  leed: "Building Systems",
+  enclosure: "Envelope",
+  site: "Site / Parking",
+  parking: "Site / Parking",
+  surface: "Site / Parking",
+  sitedev: "Site / Parking",
+  // GMP fee stack: project-wide markups with no functional home of their own.
+  // Mapped explicitly (not via the straggler fallback) so the functional-area
+  // rollup reconciles to the same grand total as the division view.
+  gcgr: "Building Systems",
+  fee: "Building Systems",
+  cont: "Building Systems",
+  precon: "Building Systems",
+  bond: "Building Systems",
+};
+
+// Child-level overrides, keyed by the full "parent.child" line-item key.
+const AREA_BY_CHILD: Record<string, FunctionalArea> = {
+  "concourse.kitchens": "Food & Beverage",
+  "concourse.concessions": "Food & Beverage",
+  "concourse.retail": "Food & Beverage",
+};
+
+const warnedStragglerKeys = new Set<string>();
+function functionalAreaFor(key: string): FunctionalArea {
+  const childArea = AREA_BY_CHILD[key];
+  if (childArea) return childArea;
+  const parentArea = AREA_BY_PARENT[key.split(".")[0]];
+  if (parentArea) return parentArea;
+  if (!warnedStragglerKeys.has(key)) {
+    warnedStragglerKeys.add(key);
+    console.warn(
+      `[arenaCostModel] line item "${key}" has no functional-area mapping — defaulting to "Building Systems"`,
+    );
+  }
+  return "Building Systems";
+}
+
 // A trade component of a coarse parent line. weight = relative share (auto-
 // normalized). qty/unit override the parent's driver for the takeoff display.
 interface Comp {
@@ -198,7 +261,7 @@ export function computeModel(input: Inputs, rates: Rates = RATES): ModelResult {
 
   // Single (non-subdivided) line — used for the markup/fee lines.
   const add = (key: string, label: string, group: LineItem["group"], cost: number, basis: string) =>
-    items.push({ key, label, group, cost: Math.round(cost), basis });
+    items.push({ key, label, group, cost: Math.round(cost), basis, functionalArea: functionalAreaFor(key) });
 
   // Subdivide a coarse parent (computed with the SAME formula/rate as the legacy
   // aggregate line) into trade components. Component extended costs sum EXACTLY to
@@ -231,7 +294,8 @@ export function computeModel(input: Inputs, rates: Rates = RATES): ModelResult {
         qty && unit && unitRate !== undefined
           ? `${Math.round(qty).toLocaleString()} ${unit} × $${fmtRate(unitRate)}`
           : parent.note ?? "allocated";
-      items.push({ key: `${parent.key}.${c.key}`, label: c.label, group: parent.group, cost, basis, qty, unit, unitRate });
+      const itemKey = `${parent.key}.${c.key}`;
+      items.push({ key: itemKey, label: c.label, group: parent.group, cost, basis, qty, unit, unitRate, functionalArea: functionalAreaFor(itemKey) });
     });
   };
 
@@ -453,6 +517,38 @@ export function computeModel(input: Inputs, rates: Rates = RATES): ModelResult {
     constructionCostToday, escalation, constructionCostEscalated,
     costPerSeat: constructionCostEscalated / i.seats,
   };
+}
+
+// ── FUNCTIONAL AREA ROLLUP (selector; pure re-grouping of existing costs) ─────
+// Sums line-item costs per functional area, sorted descending. pct is each
+// area's share of the total of the items passed in. Dev-only assertion checks
+// the area rollup reconciles to the line-item total to the dollar, so this view
+// can never contradict the division view. Items missing a tag (e.g. snapshots
+// persisted before tagging existed) are resolved from their key.
+export function rollupByFunctionalArea(
+  items: LineItem[],
+): { area: FunctionalArea; cost: number; pct: number }[] {
+  const totals = new Map<FunctionalArea, number>();
+  let grandTotal = 0;
+  for (const it of items) {
+    grandTotal += it.cost;
+    const area = it.functionalArea ?? functionalAreaFor(it.key);
+    totals.set(area, (totals.get(area) ?? 0) + it.cost);
+  }
+  const rollup = Array.from(totals, ([area, cost]) => ({
+    area,
+    cost,
+    pct: grandTotal > 0 ? cost / grandTotal : 0,
+  })).sort((a, b) => b.cost - a.cost);
+  if (import.meta.env?.DEV) {
+    const areaSum = rollup.reduce((s, r) => s + r.cost, 0);
+    if (areaSum !== grandTotal) {
+      throw new Error(
+        `[rollupByFunctionalArea] reconciliation failure: area rollup $${areaSum.toLocaleString()} ≠ line-item total $${grandTotal.toLocaleString()} (delta $${(areaSum - grandTotal).toLocaleString()})`,
+      );
+    }
+  }
+  return rollup;
 }
 
 // ── 4. PHASING (for the animated site map / time view) ───────────────────────
